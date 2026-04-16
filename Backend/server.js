@@ -1,23 +1,23 @@
 require("dotenv").config();
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-// ✅ Import the real hardware service
 const { getCurrentMetrics } = require("./Services/metricServices");
 
 const app = express();
 
-// ✅ Middleware
-app.use(cors());
+// ✅ MODIFIED: Strict CORS to allow your Vercel frontend to talk to Render
+app.use(cors({
+  origin: "*", 
+  methods: ["GET", "POST", "DELETE"],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// ✅ PORT - Should match your .env (3000)
 const PORT = process.env.PORT || 3000;
 
-// =======================
 // ✅ CONNECT MONGODB
-// =======================
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected to Atlas"))
   .catch(err => {
@@ -25,50 +25,45 @@ mongoose.connect(process.env.MONGO_URI)
     process.exit(1);
   });
 
-// =======================
-// ✅ SCHEMA + MODEL (MODIFIED FOR NEW METRICS)
-// =======================
+// ✅ SCHEMA
 const metricSchema = new mongoose.Schema({
   cpu: Number,
   memory: Number,
   disk: Number,
-  // ✅ NEW FIELDS ADDED
   virtual_memory: Number,
   process_count: Number,
   disk_queue: Number,
   timestamp: {
     type: Date,
     default: Date.now,
-    index: true // Optimized for graph performance
+    index: true 
   }
 });
 
 const Metric = mongoose.model("Metric", metricSchema);
 
-// =======================
-// ✅ ROOT ROUTE
-// =======================
 app.get("/", (req, res) => {
   res.send("Backend running with real-time hardware telemetry 🚀");
 });
 
 // =======================
-// ✅ METRICS (MAIN API) - MODIFIED FOR FULL DATASET
+// ✅ METRICS (MODIFIED)
 // =======================
 app.get("/api/metrics", async (req, res) => {
   try {
-    // 1. ✅ Get ACTUAL hardware metrics from your system
-    const stats = await getCurrentMetrics();
+    // 1. Check if we are in Production (Render) or Local
+    const isProduction = process.env.NODE_ENV === "production";
 
-    // 2. ✅ Save ACTUAL data to MongoDB Atlas automatically
-    const savedMetric = await Metric.create(stats);
-
-    // 3. ✅ Return the real stats to your dashboard
-    res.json({
-      ...stats,
-      status: "OK",
-      id: savedMetric._id
-    });
+    if (isProduction) {
+      // ✅ ON THE WEB: Find the LATEST entry pushed by your Dell G15 to Atlas
+      const latestFromCloud = await Metric.findOne().sort({ timestamp: -1 });
+      return res.json(latestFromCloud);
+    } else {
+      // ✅ ON YOUR LAPTOP: Get real hardware stats and save them
+      const stats = await getCurrentMetrics();
+      const savedMetric = await Metric.create(stats);
+      return res.json(stats);
+    }
 
   } catch (err) {
     console.error("❌ METRICS ERROR:", err);
@@ -77,27 +72,24 @@ app.get("/api/metrics", async (req, res) => {
 });
 
 // =======================
-// ✅ GET HISTORY (For your UI Graphs)
+// ✅ GET HISTORY
 // =======================
 app.get("/api/history", async (req, res) => {
   try {
     const data = await Metric.find()
       .sort({ timestamp: -1 })
-      .limit(50); // Shows last 50 points
-
+      .limit(50); 
     res.json(data);
   } catch (err) {
-    console.error("❌ HISTORY ERROR:", err);
     res.status(500).json({ error: "Fetch failed" });
   }
 });
 
 // =======================
-// ✅ DELETE OLD DATA (Prevent Atlas Storage limit)
+// ✅ DELETE OLD DATA
 // =======================
 app.delete("/api/clean", async (req, res) => {
   try {
-    // Deletes everything older than 24 hours
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await Metric.deleteMany({ timestamp: { $lt: yesterday } });
     res.json({ message: "Old logs cleaned successfully" });
@@ -106,10 +98,6 @@ app.delete("/api/clean", async (req, res) => {
   }
 });
 
-// =======================
-// ✅ START SERVER
-// =======================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Point your dashboard to http://localhost:${PORT}/api/metrics`);
 });
