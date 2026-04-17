@@ -7,19 +7,20 @@ const mongoose = require("mongoose");
 const Metric = require("../models/Metric");
 
 // 2. Connect to MongoDB Atlas
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("📡 Connected to MongoDB Atlas for Historical Import...");
     startImport();
   })
-  .catch(err => {
+  .catch((err) => {
     console.error("❌ Connection Error:", err);
     process.exit(1);
   });
 
 function startImport() {
   console.log("🚀 Starting CSV Import...");
-  
+
   // 3. Read the CSV file
   fs.createReadStream("../win_system_metrics_v2.csv")
     .pipe(csv())
@@ -34,7 +35,7 @@ function startImport() {
           virtual_memory: parseFloat(row.virtual_memory_pct) || 0,
           process_count: parseInt(row.process_count) || 0,
           disk_queue: parseFloat(row.disk_queue_length) || 0,
-          timestamp: row.timestamp ? new Date(row.timestamp) : new Date()
+          timestamp: row.timestamp ? new Date(row.timestamp) : new Date(),
         });
       } catch (err) {
         console.error("❌ Row Import Error:", err.message);
