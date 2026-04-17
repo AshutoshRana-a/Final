@@ -2,40 +2,33 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const { getCurrentMetrics } = require("./Services/metricServices");
-const { getAiSuggestion } = require("./Services/metricServices.js");
+
+const { getCurrentMetrics, getAiSuggestion } = require("./Services/metricServices");
+
 const app = express();
 
-// ✅ MODIFIED: Strict CORS to allow your Vercel frontend to talk to Render
+// ✅ CORS (only once)
 app.use(
   cors({
     origin: "*",
     methods: ["GET", "POST", "DELETE"],
-    credentials: true,
-  }),
+  })
 );
-
-app.use(cors({
-  origin: "*", 
-  methods: ["GET", "POST", "DELETE"],
-  credentials: true
-}));
 
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// ✅ CONNECT MONGODB
+// ✅ CONNECT MONGODB (only once)
 mongoose
   .connect(process.env.MONGO_URI)
-mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected to Atlas"))
   .catch((err) => {
     console.error("❌ DB Error:", err);
     process.exit(1);
   });
 
-// ✅ SCHEMA
+// ✅ SCHEMA (fixed)
 const metricSchema = new mongoose.Schema({
   cpu: Number,
   memory: Number,
@@ -48,90 +41,83 @@ const metricSchema = new mongoose.Schema({
     default: Date.now,
     index: true,
   },
-    index: true 
-  }
-);
+});
 
 const Metric = mongoose.model("Metric", metricSchema);
 
+// =======================
 app.get("/", (req, res) => {
-  res.send("Backend running with real-time hardware telemetry 🚀");
+  res.send("Backend running 🚀");
 });
 
 // =======================
-// ✅ METRICS (MODIFIED)
+// ✅ METRICS (FIXED)
 // =======================
 app.get("/api/metrics", async (req, res) => {
   try {
-    // 1. Check if we are in Production (Render) or Local
     const isProduction = process.env.NODE_ENV === "production";
 
     if (isProduction) {
-      // ✅ ON THE WEB: Find the LATEST entry pushed by your Dell G15 to Atlas
-      const latestFromCloud = await Metric.findOne().sort({ timestamp: -1 });
-      return res.json(latestFromCloud);
+      const latest = await Metric.findOne().sort({ timestamp: -1 });
+      return res.json(latest);
     } else {
-      // ✅ ON YOUR LAPTOP: Get real hardware stats and save them
       const stats = await getCurrentMetrics();
-      const savedMetric = await Metric.create(stats);
-      return res.json(stats);
-    }
-
-    if (isProduction) {
-      // ✅ ON THE WEB: Find the LATEST entry pushed by your Dell G15 to Atlas
-      const latestFromCloud = await Metric.findOne().sort({ timestamp: -1 });
-      return res.json(latestFromCloud);
-    } else {
-      // ✅ ON YOUR LAPTOP: Get real hardware stats and save them
-      const stats = await getCurrentMetrics();
-      const savedMetric = await Metric.create(stats);
+      await Metric.create(stats);
       return res.json(stats);
     }
   } catch (err) {
     console.error("❌ METRICS ERROR:", err);
-    res.status(500).json({ error: "Failed to fetch hardware metrics" });
+    res.status(500).json({ error: "Failed to fetch metrics" });
   }
 });
 
 // =======================
-// ✅ GET HISTORY
+// ✅ HISTORY (FIXED)
 // =======================
 app.get("/api/history", async (req, res) => {
   try {
-    const data = await Metric.find().sort({ timestamp: -1 }).limit(50);
     const data = await Metric.find()
       .sort({ timestamp: -1 })
-      .limit(50); 
+      .limit(50);
+
     res.json(data);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Fetch failed" });
   }
 });
 
 // =======================
-// ✅ DELETE OLD DATA
+// ✅ CLEAN OLD DATA
 // =======================
 app.delete("/api/clean", async (req, res) => {
   try {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await Metric.deleteMany({ timestamp: { $lt: yesterday } });
-    res.json({ message: "Old logs cleaned successfully" });
+
+    res.json({ message: "Old logs cleaned" });
   } catch (err) {
     res.status(500).json({ error: "Cleanup failed" });
   }
 });
 
+// =======================
+// ✅ AI SUGGESTION
+// =======================
 app.post("/api/ai-suggestion", async (req, res) => {
-  // Get metrics from the request body
-  const { cpu, mem, proc, risk } = req.body;
+  try {
+    const { cpu, mem, proc, risk } = req.body;
 
-  // Call the AI service
-  const suggestion = await getAiSuggestion(cpu, mem, proc, risk);
+    const suggestion = await getAiSuggestion(cpu, mem, proc, risk);
 
-  // Send the suggestion text back
-  res.json({ suggestion: suggestion });
+    res.json({ suggestion });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "AI failed" });
+  }
 });
 
+// =======================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
