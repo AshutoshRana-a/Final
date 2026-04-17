@@ -15,6 +15,12 @@ app.use(
   }),
 );
 
+app.use(cors({
+  origin: "*", 
+  methods: ["GET", "POST", "DELETE"],
+  credentials: true
+}));
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
@@ -22,6 +28,7 @@ const PORT = process.env.PORT || 3000;
 // ✅ CONNECT MONGODB
 mongoose
   .connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected to Atlas"))
   .catch((err) => {
     console.error("❌ DB Error:", err);
@@ -41,7 +48,9 @@ const metricSchema = new mongoose.Schema({
     default: Date.now,
     index: true,
   },
-});
+    index: true 
+  }
+);
 
 const Metric = mongoose.model("Metric", metricSchema);
 
@@ -67,6 +76,17 @@ app.get("/api/metrics", async (req, res) => {
       const savedMetric = await Metric.create(stats);
       return res.json(stats);
     }
+
+    if (isProduction) {
+      // ✅ ON THE WEB: Find the LATEST entry pushed by your Dell G15 to Atlas
+      const latestFromCloud = await Metric.findOne().sort({ timestamp: -1 });
+      return res.json(latestFromCloud);
+    } else {
+      // ✅ ON YOUR LAPTOP: Get real hardware stats and save them
+      const stats = await getCurrentMetrics();
+      const savedMetric = await Metric.create(stats);
+      return res.json(stats);
+    }
   } catch (err) {
     console.error("❌ METRICS ERROR:", err);
     res.status(500).json({ error: "Failed to fetch hardware metrics" });
@@ -79,6 +99,9 @@ app.get("/api/metrics", async (req, res) => {
 app.get("/api/history", async (req, res) => {
   try {
     const data = await Metric.find().sort({ timestamp: -1 }).limit(50);
+    const data = await Metric.find()
+      .sort({ timestamp: -1 })
+      .limit(50); 
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: "Fetch failed" });
